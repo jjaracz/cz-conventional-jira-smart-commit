@@ -1,9 +1,13 @@
 "format cjs";
 
-var wrap = require('word-wrap');
-var map = require('lodash.map');
-var longest = require('longest');
-var rightPad = require('right-pad');
+const wrap = require('word-wrap');
+const map = require('lodash.map');
+const longest = require('longest');
+const rightPad = require('right-pad');
+const Path = require('path');
+const importFrom = require('import-from');
+const resolvePkg = require('resolve-pkg');
+const semver = require('semver');
 
 var filter = function(array) {
   return array.filter(function(x) {
@@ -56,19 +60,15 @@ module.exports = function (options) {
           choices: choices
         },
         {
-          type: 'input',
+          type: 'list',
           name: 'scope',
-          message: 'Denote the scope of this change (config, build, module, theme, site, etc.):\n'
+          message: 'Scope of this change (which service has changed):',
+          choices: _ => getPackages().then(packages => packages.map(package => ({name: package, value: package})).concat([{name: 'skip', value: ''}]))
         },
         {
           type: 'input',
           name: 'subject',
           message: 'Write a short, imperative tense description of the change:\n'
-        },
-        {
-          type: 'input',
-          name: 'issues',
-          message: 'JIRA issue:\n'
         },
         {
           type: 'input',
@@ -79,6 +79,11 @@ module.exports = function (options) {
           type: 'input',
           name: 'breaking',
           message: 'List any breaking changes:\n'
+        },
+        {
+          type: 'input',
+          name: 'issues',
+          message: 'JIRA issue:\n'
         },
         {
           type: 'input',
@@ -157,3 +162,36 @@ module.exports = function (options) {
     }
   };
 };
+
+
+function getPackages() {
+	return Promise.resolve()
+		.then(() => {
+			const cwd = process.cwd();
+			const lernaVersion = getLernaVersion(cwd);
+
+			if (semver.lt(lernaVersion, '3.0.0')) {
+				const Repository = importFrom(cwd, 'lerna/lib/Repository');
+				const PackageUtilities = importFrom(cwd, 'lerna/lib/PackageUtilities');
+
+				const repository = new Repository(cwd);
+				return PackageUtilities.getPackages({
+					packageConfigs: repository.packageConfigs,
+					rootPath: cwd
+				});
+			}
+
+			const Project = importFrom(cwd, '@lerna/project');
+			const project = new Project(cwd);
+			return project.getPackages();
+		})
+		.then(packages => {
+			return packages
+				.map(pkg => pkg.name)
+				.map(name => (name.charAt(0) === '@' ? name.split('/')[1] : name));
+		});
+}
+
+function getLernaVersion(cwd) {
+	return require(Path.join(resolvePkg('lerna', {cwd}), 'package.json')).version;
+}
